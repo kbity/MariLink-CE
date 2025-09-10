@@ -1,2 +1,2 @@
 # MariLink-CE
-MariLink: Crystal Etiquette, the not at all awaited python rewrite
+MariLink CE: the not at all awaited python rewrite
