@@ -16,13 +16,13 @@ tree = bot.tree
 # --- quick config --- #
 
 evaluser = 798072830595301406
-TOEKN = "n"
+TOEKN = "X"
 errorMsgs = ["500 Internal Server Error", "501 Not Implemented", "502 Bad Gateway", "503 Service Unavailable", "504 Gateway Timeout", "505 HTTP Version Not Supported", "506 Variant Also Negotiates", "507 Insufficient Storage", "508 Loop Detected", "509 Bandwidth Limit Exceeded", "510 Not Extended", "511 Network Authentication Required", "520 Web Server Returned an Unknown Error", "521 Web Server Is Down", "522 Connection Timed Out", "523 Origin Is Unreachable", "524 A Timeout Occurred", "525 SSL Handshake Failed", "526 Invalid SSL Certificate", "527 Railgun Error", "529 Site is overloaded", "530 Origin DNS Error", "540 Temporarily Disabled", "555 User Defined Resource Error", "561 Unauthorized", "598 Network read timeout error", "599 Network Connect Timeout Error", "618 Too Many Cubes\n-# ✨ You got the Rare Error"]
 
 # --- commands --- #
 
 @tree.command(name="createchannel", description="creates marilink channel")
-async def ping(ctx: commands.Context, name: str, password: str = None, public: bool = False, mode: Literal["Normal", "Strange", "TwoPoint", "OneWay"] = "Normal"):
+async def createchannel(ctx: commands.Context, name: str, password: str = None, public: bool = False, mode: Literal["Normal", "Strange", "TwoPoint", "OneWay"] = "Normal"):
     discordChannelIds = None
     try:
         db = load_db()
@@ -33,6 +33,9 @@ async def ping(ctx: commands.Context, name: str, password: str = None, public: b
         res = f"ok i totally created `{name}` as a `{mode}` channel"
         if public and password is not None:
             await ctx.followup.send("vro pick one like buddy lmao wtf?? you cant have a password on a public channel what the fuck is wrong with you :rofl::rofl:")
+            return
+        if public and mode == "TwoPoint":
+            await ctx.followup.send("pretty sure you dont want to do this. either way, its not allowed.")
             return
         if name == "MariLink_Configuration":
             await ctx.followup.send("this name is ass bro")
@@ -45,20 +48,28 @@ async def ping(ctx: commands.Context, name: str, password: str = None, public: b
             if db[name]["userId"] == str(ctx.user.id):
                 if "discordChannelIds" in db[name]:
                     discordChannelIds = db[name]["discordChannelIds"]
+
+                if (not "Type" in db[name]) or (not db[name]["Type"] == "TwoPoint"):
+                    if mode == "TwoPoint":
+                        await ctx.followup.send("cannot convert normal channel to TwoPoint channel")
+                        return
+
                 res = res + "\n-# (Channel Edited)"
             else:
                 await ctx.followup.send("channel already exists!")
                 return
+        if password is not None and mode == "TwoPoint":
+            res = res + "\n-# btw setting passwords is pointless on TwoPoint channels"
         db[name] = {}
         db[name]["userId"] = str(ctx.user.id)
         if password is not None:
             db[name]["password"] = password
         if public:
             db[name]["isPublic"] = public
-        if discordChannelIds:
-            db[name]["discordChannelIds"] = discordChannelIds
         if not mode == "Normal":
             db[name]["Type"] = mode
+        if discordChannelIds:
+            db[name]["discordChannelIds"] = discordChannelIds
 
         await ctx.followup.send(res)
         save_db(db)
@@ -66,7 +77,7 @@ async def ping(ctx: commands.Context, name: str, password: str = None, public: b
         await ctx.channel.send(f"Error {random.choice(errorMsgs)}\n-# {e}")
 
 @tree.command(name="removechannel", description="uncreates marilink channel")
-async def ping(ctx: commands.Context, name: str):
+async def removechannel(ctx: commands.Context, name: str):
     try:
         db = load_db()
         await ctx.response.defer()
@@ -100,6 +111,112 @@ async def ping(ctx: commands.Context, name: str):
 
     except Exception as e:
         await ctx.channel.send(f"Error {random.choice(errorMsgs)}\n-# {e}")
+
+@tree.command(name="link", description="connect current channel to marilink channel")
+async def unlink(ctx: commands.Context, name: str, password: str = None):
+    try:
+        if password is None:
+            await ctx.response.defer()
+        else:
+            await ctx.response.defer(ephemeral=True)
+
+        db = load_db()
+        allowed_to_do = False
+        if ctx.user.id == evaluser:
+            allowed_to_do = True
+        else:
+            perms = ctx.channel.permissions_for(ctx.user)
+            if perms.manage_channels:
+                allowed_to_do = True
+
+        if not allowed_to_do:
+            await ctx.followup.send("you're not the permission-doer 🥸")
+            return
+
+        if not name in db:
+            await ctx.followup.send("that channel doesnt exist you absolute buffoon")
+            return
+
+        #plaintext-grade security
+        if "password" in db[name]:
+            if not db[name]["password"] == password and not db[name]["userId"] == str(ctx.user.id):
+                await ctx.followup.send("wrong password!")
+                return
+
+        if "Type" in db[name] and db[name]["Type"] == "TwoPoint":
+            if not db[name]["userId"] == str(ctx.user.id):
+                await ctx.followup.send("not your channel")
+                return
+
+        res = f"✅ `{name}` linked to <#{ctx.channel.id}>"
+
+        for entry in db:
+            if "discordChannelIds" in db[entry]:
+                if str(ctx.channel.id) in db[entry]["discordChannelIds"]:
+                    await ctx.followup.send(f"<#{ctx.channel.id}> is already linked to `{entry}`!")
+                    return
+
+        if not "discordChannelIds" in db[name]:
+            db[name]["discordChannelIds"] = [str(ctx.channel.id)]
+        else:
+            if str(ctx.channel.id) in db[name]["discordChannelIds"]:
+                await ctx.followup.send(f"<#{ctx.channel.id}> is already linked to `{name}`")
+                return
+
+        db[name]["discordChannelIds"].append(str(ctx.channel.id))
+
+        if "Type" in db[name] and db[name]["Type"] == "TwoPoint":
+            if len(db[name]["discordChannelIds"]) > 2:
+                await ctx.followup.send(f"your cable isnt a hydra and can only connect to 2 places")
+                return
+
+        await ctx.followup.send(res)
+        save_db(db)
+
+    except Exception as e:
+        await ctx.channel.send(f"Error {random.choice(errorMsgs)}\n-# {e}")
+
+@tree.command(name="unlink", description="disconnect current channel to marilink channel")
+async def unlink(ctx: commands.Context):
+    try:
+        await ctx.response.defer()
+
+        db = load_db()
+        allowed_to_do = False
+
+        if ctx.user.id == evaluser:
+            allowed_to_do = True
+        else:
+            perms = ctx.channel.permissions_for(ctx.user)
+            if perms.manage_channels:
+                allowed_to_do = True
+
+        if not allowed_to_do:
+            await ctx.followup.send("you're not the permission-doer 🥸")
+            return
+
+        mlchannel = None
+
+        for entry in db:
+            if "discordChannelIds" in db[entry]:
+                if str(ctx.channel.id) in db[entry]["discordChannelIds"]:
+                    mlchannel = entry
+                    break
+
+        if mlchannel is None:
+            await ctx.followup.send(f"<#{ctx.channel.id}> didn't seem to link anywhere")
+            return
+
+        db[mlchannel]["discordChannelIds"].remove(str(ctx.channel.id))
+
+        res = f"✅ `{mlchannel}` unlinked from <#{ctx.channel.id}>"
+        await ctx.followup.send(res)
+        save_db(db)
+
+    except Exception as e:
+        await ctx.channel.send(f"Error {random.choice(errorMsgs)}\n-# {e}")
+
+# --- debug commads --- #
 
 @bot.command(help="might run code i'm not sure")
 async def do(ctx, *, prompt: str):
