@@ -16,7 +16,7 @@ usernameCache = {}
 mari_linking = {}
 
 mlav = None
-with open("img.png", "rb") as image:
+with open("res/img.png", "rb") as image:
   f = image.read()
   mlav = bytearray(f)
 
