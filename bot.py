@@ -1,6 +1,6 @@
 # --- imports --- #
 
-import discord, traceback, random, json, re, aiohttp, io, os, sys
+import discord, traceback, random, json, re, aiohttp, io, os, sys, asyncio
 from discord import app_commands
 from discord.ext import commands
 from typing import Literal, Optional
@@ -243,6 +243,35 @@ async def unlink(ctx: commands.Context):
     except Exception as e:
         await ctx.channel.send(f"Error {random.choice(errorMsgs)}\n-# {e}")
 
+@tree.command(name="help", description="dear fucking god i dont understand marilink at all")
+async def help(ctx: commands.Context):
+    try:
+        await ctx.response.defer()
+        embed = discord.Embed(
+            title=f"MariLink CE Command Help",
+            color=discord.Color.from_str("0xffb1ff")
+        )
+        embed.add_field(name="/link", value='The most important MariLink command. "name" is the channel name, either one from the channel browser, "general" (which is probably what you want), or a name of a channel you or someone else made for private use. "channel" is where you put the channel in your discord server to link to. "password" is an optional field used if a channel has a password set up to prevent unauthorized links for private channels. requires manage channel or admin.', inline=False)
+        embed.add_field(name="/unlink", value="/link but backwards. put in the name of the MariLink channel, and the channel in your server to remove the link.", inline=False)
+        embed.add_field(name="/createchannel", value='creates a channel for MariLink. "name" is the name the channel will use, "password", as mentioned in /link, is for preventing unauthorized links. "publicallylisted", if set to yes, will allow your channel to be seen in the channel browser. not recommended if you set a password.', inline=False)
+        embed.add_field(name="/removechannel",
+            value='removes a channel from MariLink. "name" is the name the channel will delete. you must be the channel\'s owner to delete a channel. confirmation is required.',
+            inline=False)
+        embed.add_field(name="/delete", value="attempts to delete a message across all the channels. will fail if marilink was restarted after it was sent.", inline=False)
+        embed.add_field(name="placeholder", value="the place is held.", inline=False)
+        embed.add_field(name="placeholder", value="the place is held.", inline=False)
+        embed.add_field(name="placeholder", value="the place is held.", inline=False)
+        embed.add_field(name="/browser", value="shows you public marilink channels. also has a search option.", inline=False)
+        embed.add_field(name="/about", value="displays info about MariLink CE", inline=False)
+        if VerString == "Dev":
+            embed.set_footer(text=f"MariLink CE Development Version !!𝘕𝘰𝘵 𝘍𝘰𝘳 𝘗𝘳𝘰𝘥𝘶𝘤𝘵𝘪𝘰𝘯 𝘜𝘴𝘦!!")
+        else:
+            embed.set_footer(text=f"MariLink CE v{VerString}")
+
+        await ctx.followup.send(embed=embed)
+    except Exception as e:
+        await ctx.channel.send(f"Error {random.choice(errorMsgs)}\n-# {e}")
+
 @tree.command(name="about", description="what is marilink and why is it ce now")
 async def about(ctx: commands.Context):
     try:
@@ -315,41 +344,55 @@ async def listchannels(ctx: commands.Context):
 @tree.command(name="browser", description="browse MariLink channels")
 @discord.app_commands.describe(query="search term")
 @discord.app_commands.describe(page="page number")
-async def listchannels(ctx: commands.Context, query: str = None, page: int = 1):
+async def listchannels(ctx: commands.Context, query: str = "None", page: int = 1):
     try:
         await ctx.response.defer()
         db = load_db()
 
+        # Collect all public channels
         data = {}
+        for channel, info in db.items():
+            if info.get("isPublic"):
+                details = []
+                details.append(f"Type: {info.get('Type', 'Normal')}")
+                connections = info.get("discordChannelIds", [])
+                details.append(f"Connections: {len(connections) if connections else 'None'}")
+                data[channel] = "\n".join(details)
 
+        # Apply query filter (case-insensitive)
+        if query and query.lower() != "none":
+            data = {k: v for k, v in data.items() if query.lower() in k.lower()}
+
+        # Pagination setup
+        items_per_page = 8
+        total_items = len(data)
+        total_pages = max(1, (total_items + items_per_page - 1) // items_per_page)
+
+        # Clamp page number
+        page = max(1, min(page, total_pages))
+
+        start_index = (page - 1) * items_per_page
+        end_index = start_index + items_per_page
+        paged_items = list(data.items())[start_index:end_index]
+
+        # Build embed
         embed = discord.Embed(
-            title="Public Channels",
+            title=f"Public {'Search' if query.lower() != 'none' else 'Channels'}",
             color=discord.Color.from_str("0xffb1ff")
         )
 
-        for channel in db:
-            if "isPublic" in db[channel]:
-                if db[channel]["isPublic"]:
-                    data = ""
-                    if "Type" in db[channel]:
-                        data += f"Type: {db[channel]['Type']}\n"
-                    else:
-                        data += "Type: Normal\n"
-                    if "discordChannelIds" in db[channel]:
-                        connectionslen = len(db[channel]['discordChannelIds'])
-                        if connectionslen == 0:
-                            data += "Connections: None\n"
-                        else:
-                            data += f"Connections: {connectionslen}\n"
-                    else:
-                        data += "Connections: None\n"
-                    data["channel"] = data
-                    #embed.add_field(name=channel, value=data, inline=False)
+        if not paged_items:
+            embed.description = "No public channels found."
+        else:
+            for name, value in paged_items:
+                embed.add_field(name=name, value=value, inline=False)
 
-        embed.set_footer(text=f"Page {page} of idk")
+        embed.set_footer(text=f"Page {page} of {total_pages}")
         await ctx.followup.send(embed=embed)
+
     except Exception as e:
         await ctx.channel.send(f"Error {random.choice(errorMsgs)}\n-# {e}")
+    # i asked chatgpt to finish this because this is stupid
 
 @tree.command(name="delete", description="deletes a message from like... everywhere")
 @discord.app_commands.describe(message_id="id or link of message to delete")
@@ -516,10 +559,12 @@ async def on_ready():
 
 @bot.event
 async def on_message_delete(message: discord.Message):
+    await asyncio.sleep(5) # prevents race conditions
+
     if message.author.id == bot.user.id:
         return # dont respond to itself
 
-    if message.webhook_id:
+    if message.webhook_id and not message.interaction_metadata: # allow application commands
         return # dont respond to webhooks, often sent by the bot itself
 
     messageId = message.id
@@ -557,10 +602,12 @@ async def on_message_delete(message: discord.Message):
 
 @bot.event
 async def on_message_edit(before: discord.Message, message: discord.Message):
+    await asyncio.sleep(5) # prevents race conditions
+
     if message.author.id == bot.user.id:
         return # dont respond to itself
 
-    if message.webhook_id:
+    if message.webhook_id and not message.interaction_metadata: # allow application commands
         return # dont respond to webhooks, often sent by the bot itself
 
     messageId = message.id
