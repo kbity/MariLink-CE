@@ -27,18 +27,22 @@ evaluser = 798072830595301406 # Bot owner Id.
 load_dotenv()
 TOKEN = os.getenv("TOKEN") # Load Dotenv
 
-VerString = "1.0.0 BETA" # Version String
+VerString = "1.0.0" # Version String
 
 emojis = {}
 emojis["normal"] = "<:normal:1415470137464717373>"
 emojis["reply"] = "<:reply:1422725515608854579>"
 emojis["command"] = "<:command:1422725512589217883>"
 emojis["NeoMari_Melt_Sob"] = "<:NeoMari_Melt_Sob:1422744823768809534>"
+emojis["ml_mute"] = "<:ml_mute:1431480922385154179>"
+emojis["ml_ban"] = "<:ml_ban:1431480918693908531>"
+emojis["ml_check"] = "<:ml_check:1431480916181778452>"
+emojis["ml_error"] = "<:ml_error:1431480920400990349>"
 
 # these are random strings used in the bot
 errorMsgs = ["500 Internal Server Error", "501 Not Implemented", "502 Bad Gateway", "503 Service Unavailable", "504 Gateway Timeout", "505 HTTP Version Not Supported", "506 Variant Also Negotiates", "507 Insufficient Storage", "508 Loop Detected", "509 Bandwidth Limit Exceeded", "510 Not Extended", "511 Network Authentication Required", "520 Web Server Returned an Unknown Error", "521 Web Server Is Down", "522 Connection Timed Out", "523 Origin Is Unreachable", "524 A Timeout Occurred", "525 SSL Handshake Failed", "526 Invalid SSL Certificate", "527 Railgun Error", "529 Site is overloaded", "530 Origin DNS Error", "540 Temporarily Disabled", "555 User Defined Resource Error", "561 Unauthorized", "598 Network read timeout error", "599 Network Connect Timeout Error", "618 Too Many Cubes\n-# ✨ You got the Rare Error"]
 
-whatce = ["Community Edition", "Crystal Ediquite", "Cpython rEwrite", "Crazy Edition", "Colour Edition", "Cell machinE", "AX Zirconium" "Ceiling Effects", "Chilled Estrogen", "CD Easy", "Citem Easylum is way more interesting", "Cool Explosions", "Countless Errors", "CEASCE", "Creating Elephants", "Cyeah ok libEral", "Ceroba Edition", "Classic Edition", "(fan) Cervice Edition", "99 bottles of iCE cold beer", "Creisi Edition", "Cesium Edition", "Community Edition??", "Cinnamon Edition", "Chocolate and Eggs", "CariEink", "CErium", "ChEchen language", "Common Era", "Customer Edge", "Calculator Edition"]
+whatce = ["Community Edition", "Crystal Ediquite", "Cpython rEwrite", "Crazy Edition", "Colour Edition", "Cell machinE", "AX Zirconium" "Ceiling Effects", "Chilled Estrogen", "CD Easy", "Citem Easylum is way more interesting", "Cool Explosions", "Countless Errors", "CEASCE", "Creating Elephants", "Cyeah ok libEral", "Ceroba Edition", "Classic Edition", "(fan) Cervice Edition", "99 bottles of iCE cold beer", "Creisi Edition", "Cesium Edition", "Community Edition??", "Cinnamon Edition", "Chocolate and Eggs", "CariEink", "CErium", "ChEchen language", "Common Era", "Customer Edge", "Calculator Edition", "Celery Empire"]
 
 # --- commands --- #
 
@@ -51,18 +55,18 @@ async def createchannel(ctx: commands.Context, name: str, password: str = None, 
             await ctx.response.defer()
         else:
             await ctx.response.defer(ephemeral=True)
-        res = f"ok i totally created `{name}` as a `{mode}` channel"
+        res = f"{emojis['ml_check']} ok i totally created `{name}` as a `{mode}` channel"
         if public and password is not None:
-            await ctx.followup.send("vro pick one like buddy lmao wtf?? you cant have a password on a public channel what the fuck is wrong with you :rofl::rofl:")
+            await ctx.followup.send(f"{emojis['ml_error']} vro pick one like buddy lmao wtf?? you cant have a password on a public channel what the fuck is wrong with you :rofl::rofl:")
             return
         if public and mode == "TwoPoint":
-            await ctx.followup.send("pretty sure you dont want to do this. either way, its not allowed.")
+            await ctx.followup.send(f"{emojis['ml_error']} pretty sure you dont want to do this. either way, its not allowed.")
             return
         if name == "MariLink_Configuration":
-            await ctx.followup.send("this name is ass. session terminated.")
+            await ctx.followup.send(f"{emojis['ml_error']} this name is ass. session terminated.")
             return
         if len(name) > 26:
-            await ctx.followup.send("channel names can only be as long as 26 characters. just think about it, 26 is plenty, im sure.")
+            await ctx.followup.send(f"{emojis['ml_error']} channel names can only be as long as 26 characters. just think about it, 26 is plenty, im sure.")
             return
         if password is None:
             res = res + " with no password"
@@ -77,12 +81,12 @@ async def createchannel(ctx: commands.Context, name: str, password: str = None, 
 
                 if (not "Type" in db[name]) or (not db[name]["Type"] == "TwoPoint"):
                     if mode == "TwoPoint":
-                        await ctx.followup.send("cannot convert normal channel to TwoPoint channel")
+                        await ctx.followup.send(f"{emojis['ml_error']} cannot convert normal channel to TwoPoint channel")
                         return
 
                 res = res + "\n-# (Channel Edited)"
             else:
-                await ctx.followup.send("channel already exists!")
+                await ctx.followup.send(f"{emojis['ml_error']} channel already exists!")
                 return
         if password is not None and mode == "TwoPoint":
             res = res + "\n-# btw setting passwords is pointless on TwoPoint channels"
@@ -111,13 +115,13 @@ async def removechannel(ctx: commands.Context, name: str):
         await ctx.response.defer()
         if name in db:
             if not db[name]["userId"] == str(ctx.user.id):
-                await ctx.followup.send(f"not yours {emojis['normal']}")
+                await ctx.followup.send(f"{emojis['ml_error']} not yours {emojis['normal']}")
                 return
         else:
-            await ctx.followup.send("channel does not exists")
+            await ctx.followup.send(f"{emojis['ml_error']} channel does not exists")
             return
 
-        res = f"channel `{name}` no longer exists, assuming it existed in the first place"
+        res = f"{emojis['ml_check']} channel `{name}` no longer exists, assuming it existed in the first place"
 
         async def confirm_button_thingy(ctx2: discord.Interaction):
             if not db[name]["userId"] == str(ctx2.user.id):
@@ -158,25 +162,25 @@ async def unlink(ctx: commands.Context, name: str, password: str = None):
                 allowed_to_do = True
 
         if not allowed_to_do:
-            await ctx.followup.send("you're not the permission-doer 🥸")
+            await ctx.followup.send(f"{emojis['ml_error']} you're not the permission-doer")
             return
 
         if not name in db:
-            await ctx.followup.send("that channel doesnt exist you absolute buffoon")
+            await ctx.followup.send(f"{emojis['ml_error']} that channel doesnt exist you absolute buffoon")
             return
 
         #plaintext-grade security
         if "password" in db[name]:
             if not db[name]["password"] == password and not db[name]["userId"] == str(ctx.user.id):
-                await ctx.followup.send("wrong password!")
+                await ctx.followup.send(f"{emojis['ml_error']} wrong password!")
                 return
 
         if "Type" in db[name] and db[name]["Type"] == "TwoPoint":
             if not db[name]["userId"] == str(ctx.user.id):
-                await ctx.followup.send("not your channel")
+                await ctx.followup.send(f"{emojis['ml_error']} not your channel")
                 return
 
-        res = f"✅ `{name}` linked to <#{ctx.channel.id}>"
+        res = f"{emojis['ml_check']} `{name}` linked to <#{ctx.channel.id}>"
 
         for entry in db:
             if "discordChannelIds" in db[entry]:
@@ -219,7 +223,7 @@ async def unlink(ctx: commands.Context):
                 allowed_to_do = True
 
         if not allowed_to_do:
-            await ctx.followup.send("you're not the permission-doer 🥸")
+            await ctx.followup.send(f"{emojis['ml_error']} you're not the permission-doer")
             return
 
         mlchannel = None
@@ -231,12 +235,12 @@ async def unlink(ctx: commands.Context):
                     break
 
         if mlchannel is None:
-            await ctx.followup.send(f"<#{ctx.channel.id}> didn't seem to link anywhere")
+            await ctx.followup.send(f"{emojis['ml_error']} <#{ctx.channel.id}> didn't seem to link anywhere")
             return
 
         db[mlchannel]["discordChannelIds"].remove(str(ctx.channel.id))
 
-        res = f"✅ `{mlchannel}` unlinked from <#{ctx.channel.id}>"
+        res = f"{emojis['ml_check']} `{mlchannel}` unlinked from <#{ctx.channel.id}>"
         await ctx.followup.send(res)
         save_db(db)
 
@@ -257,9 +261,9 @@ async def help(ctx: commands.Context):
         embed.add_field(name="/removechannel",
             value='removes a channel from MariLink. "name" is the name the channel will delete. you must be the channel\'s owner to delete a channel. confirmation is required.',
             inline=False)
-        embed.add_field(name="/delete", value="attempts to delete a message across all the channels. will fail if marilink was restarted after it was sent.", inline=False)
-        embed.add_field(name="placeholder", value="the place is held.", inline=False)
-        embed.add_field(name="placeholder", value="the place is held.", inline=False)
+        embed.add_field(name="/delete", value="used by operators, mods, admins, or owners. attempts to delete a message across all the channels. will fail if marilink was restarted after it was sent.", inline=False)
+        embed.add_field(name="/mute", value="used by people with owner, admin, or mod permissions and prevents someone from speaking for a period of time", inline=False)
+        embed.add_field(name="/ban", value="used by people with admin or owner permissions to block a person from speaking in a channel or globally ever again.", inline=False)
         embed.add_field(name="/promote", value="gives a user perms in either a channel you own or administrate. also can be used by global admins to give people global perms.", inline=False)
         embed.add_field(name="/browser", value="shows you public marilink channels. also has a search option.", inline=False)
         embed.add_field(name="/about", value="displays info about MariLink CE", inline=False)
@@ -335,7 +339,7 @@ async def listchannels(ctx: commands.Context):
 
         embed.set_footer(text=f"Total Channels: {count}")
         if count > 25:
-            await ctx.followup.send("you have too many channels")
+            await ctx.followup.send(f"{emojis['ml_error']} you have too many channels")
         else:
             await ctx.followup.send(embed=embed)
     except Exception as e:
@@ -382,7 +386,7 @@ async def listchannels(ctx: commands.Context, query: str = "None", page: int = 1
         )
 
         if not paged_items:
-            embed.description = "No public channels found."
+            embed.description = f"{emojis['ml_error']} No public channels found."
         else:
             for name, value in paged_items:
                 embed.add_field(name=name, value=value, inline=False)
@@ -433,10 +437,10 @@ async def delete(ctx: commands.Context, message_id: str):
         userisbotowner = (ctx.user.id == evaluser)
 
         if not (userisadmin or userismod or userisop or userisowner or userisglobaladmin or userisglobalmod or userisglobalop or userisbotowner):
-            return await ctx.followup.send("perms issue")
+            return await ctx.followup.send(f"{emojis['ml_error']} perms issue")
 
         if leadId is None:
-            await ctx.followup.send("failed to delete, message not in cache")
+            await ctx.followup.send(f"{emojis['ml_error']} failed to delete, message not in cache")
             return
 
         for msgId in mari_linking[leadId]["proxies"]:
@@ -453,7 +457,7 @@ async def delete(ctx: commands.Context, message_id: str):
 
         mari_linking.pop(leadId, None)
 
-        await ctx.followup.send("✅ Deleted")
+        await ctx.followup.send(f"{emojis['ml_check']} Deleted")
     except Exception as e:
         await ctx.channel.send(f"Error {random.choice(errorMsgs)}\n-# {e}")
 
@@ -477,9 +481,9 @@ async def changeavatar(message: discord.Interaction, avatar: Optional[discord.At
         try:
             # this isnt supported by discord.py yet
             await bot.http.request(discord.http.Route("PATCH", f"/guilds/{message.guild.id}/members/@me"), json={"avatar": avatar_value})
-            await message.followup.send("Avatar changed successfully!")
+            await message.followup.send(f"{emojis['ml_check']} Avatar changed successfully!")
         except Exception:
-            await message.followup.send("Failed to change avatar! Your image is too big or you are changing avatars too quickly.", ephemeral=True)
+            await message.followup.send(f"{emojis['ml_error']} Failed to change avatar! Your image is too big or you are changing avatars too quickly.", ephemeral=True)
             return
     except Exception as e:
         await ctx.channel.send(f"Error {random.choice(errorMsgs)}\n-# {e}")
@@ -490,9 +494,7 @@ async def promote(ctx: commands.Context, level: Literal["none", "operator", "mod
         await ctx.response.defer()
         db = load_db()
         if not channel in db:
-            return await ctx.followup.send("not a real channel")
-        if not channel in db:
-            return await ctx.followup.send("not a real channel")
+            return await ctx.followup.send(f"{emojis['ml_error']} not a real channel")
         db[channel].setdefault("permissions", {})
         target = None
         userisadmin = (str(ctx.user.id) in db[channel]["permissions"] and db[channel]["permissions"][str(ctx.user.id)] == "administrator")
@@ -500,7 +502,7 @@ async def promote(ctx: commands.Context, level: Literal["none", "operator", "mod
         userisowner = ("userId" in db[channel] and db[channel]["userId"] == str(ctx.user.id))
         userisbotowner = (ctx.user.id == evaluser)
         if not (userisadmin or userisowner or userisglobaladmin or userisbotowner):
-            return await ctx.followup.send("perms issue")
+            return await ctx.followup.send(f"{emojis['ml_error']} perms issue")
         if user.isdigit():
             target = user
         else:
@@ -510,12 +512,12 @@ async def promote(ctx: commands.Context, level: Literal["none", "operator", "mod
                 if user.lower() in usernameCache:
                     target = usernameCache[user.lower()]
                 else:
-                    return await ctx.followup.send("Username not known!")
+                    return await ctx.followup.send(f"{emojis['ml_error']} Username not known!")
         db[channel]["permissions"][str(target)] = level
         if level == "none":
-            res = f"user <@{target}> demoted"
+            res = f"{emojis['ml_check']} user <@{target}> demoted"
         else:
-            res = f"user <@{target}> set to {level}"
+            res = f"{emojis['ml_check']} user <@{target}> set to {level}"
         if channel == "MariLink_Configuration":
             res += " globally!!!"
         else:
@@ -531,9 +533,7 @@ async def ban(ctx: commands.Context, user: str, channel: str = "MariLink_Configu
         await ctx.response.defer()
         db = load_db()
         if not channel in db:
-            return await ctx.followup.send("not a real channel")
-        if not channel in db:
-            return await ctx.followup.send("not a real channel")
+            return await ctx.followup.send(f"{emojis['ml_error']} not a real channel")
         db[channel].setdefault("bans", {})
         target = None
         userisadmin = (str(ctx.user.id) in db[channel]["permissions"] and db[channel]["permissions"][str(ctx.user.id)] == "administrator")
@@ -541,7 +541,7 @@ async def ban(ctx: commands.Context, user: str, channel: str = "MariLink_Configu
         userisowner = ("userId" in db[channel] and db[channel]["userId"] == str(ctx.user.id))
         userisbotowner = (ctx.user.id == evaluser)
         if not (userisadmin or userisowner or userisglobaladmin or userisbotowner):
-            return await ctx.followup.send("perms issue")
+            return await ctx.followup.send(f"{emojis['ml_error']} perms issue")
         if user.isdigit():
             target = user
         else:
@@ -551,13 +551,13 @@ async def ban(ctx: commands.Context, user: str, channel: str = "MariLink_Configu
                 if user.lower() in usernameCache:
                     target = usernameCache[user.lower()]
                 else:
-                    return await ctx.followup.send("Username not known!")
+                    return await ctx.followup.send(f"{emojis['ml_error']} Username not known!")
         db[channel]["bans"][str(target)] = not remove
         if remove:
             un = "un"
         else:
             un = ""
-        res = f"user <@{target}> has been {un}banned"
+        res = f"{emojis['ml_check']} user <@{target}> has been {un}banned"
         if channel == "MariLink_Configuration":
             res += " globally!!!"
         else:
@@ -573,9 +573,7 @@ async def mute(ctx: commands.Context, user: str, channel: str = "MariLink_Config
         await ctx.response.defer()
         db = load_db()
         if not channel in db:
-            return await ctx.followup.send("not a real channel")
-        if not channel in db:
-            return await ctx.followup.send("not a real channel")
+            return await ctx.followup.send(f"{emojis['ml_error']} not a real channel")
         db[channel].setdefault("mutes", {})
         target = None
 
@@ -587,7 +585,7 @@ async def mute(ctx: commands.Context, user: str, channel: str = "MariLink_Config
         userisglobalmod = (str(ctx.user.id) in db["MariLink_Configuration"]["permissions"] and db["MariLink_Configuration"]["permissions"][str(ctx.user.id)] == "moderator")
 
         if not (userisadmin or userisowner or userisglobaladmin or userisbotowner or userismod or userisglobalmod):
-            return await ctx.followup.send("perms issue")
+            return await ctx.followup.send(f"{emojis['ml_error']} perms issue")
 
         if user.isdigit():
             target = user
@@ -598,13 +596,13 @@ async def mute(ctx: commands.Context, user: str, channel: str = "MariLink_Config
                 if user.lower() in usernameCache:
                     target = usernameCache[user.lower()]
                 else:
-                    return await ctx.followup.send("Username not known!")
+                    return await ctx.followup.send(f"{emojis['ml_error']} Username not known!")
         db[channel]["mutes"][str(target)] = int(time.time())+(timeout*60)
         if not timeout:
             un = "un"
         else:
             un = ""
-        res = f"user <@{target}> has been {un}muted"
+        res = f"{emojis['ml_check']} user <@{target}> has been {un}muted"
         if timeout:
             res += f" {timeout} minutes"
         if channel == "MariLink_Configuration":
@@ -926,7 +924,10 @@ async def on_message(message: discord.Message):
     usermoderated = (userismuted or userisbanned or userisglobalmuted or userisglobalbanned)
 
     if usermoderated:
-        msg = "you are "
+        icon = emojis['ml_mute']
+        if userisbanned or userisglobalbanned:
+            icon = emojis['ml_ban']
+        msg = f"{icon} you are "
         if userisglobalbanned:
             msg += "globally banned from marilink"
         elif userisbanned:
