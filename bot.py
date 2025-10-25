@@ -798,6 +798,57 @@ async def on_message_edit(before: discord.Message, message: discord.Message):
     if usermoderated:
         return
 
+    sticker_data = ""
+    if message.stickers:
+        sticker = message.stickers[0]
+        if sticker.format == StickerFormatType.gif:
+            suffix = ".gif"
+        else:
+            suffix = ".png"
+        sticker_data = f"[{sticker.name}](https://media.discordapp.net/stickers/{sticker.id}{suffix})"
+
+    message_data = message.content + sticker_data
+
+    if message.reference:
+        try:
+            ogmsg = await message.channel.fetch_message(message.reference.message_id)
+        except Exception:
+            ogmsg = None
+        deactiveurl = r"(https?://\S+)"
+        if ogmsg is not None:
+            omlmsg = ogmsg.content
+            if ogmsg.content.startswith(f"-# ┌ <:reply:") or ogmsg.content.startswith(f"-# ┌ <:command:"):
+                omlmsg = " ".join(ogmsg.content.splitlines()[1:])
+    
+            elipse = ""
+            if len(omlmsg) > 128:
+                elipse = "..."
+    
+            msgcont = re.sub(deactiveurl, r"<\1>", omlmsg).replace('\n', ' ')[:128] + elipse
+
+            quserisbanned = (str(ogmsg.author.id) in db[mlchannel]["bans"] and db[mlchannel]["bans"][str(ogmsg.author.id)])
+            quserisglobalbanned = (str(ogmsg.author.id) in db["MariLink_Configuration"]["bans"] and db["MariLink_Configuration"]["bans"][str(ogmsg.author.id)])
+            qusermoderated = (quserisbanned or quserisglobalbanned)
+
+            if qusermoderated:
+                msgcont = "[Blocked Message]"
+
+            aorther = str(ogmsg.author).replace('#0000', '').replace(' [Via MariLink]', '')
+            reply_thing = f"-# ┌ {emojis['reply']} **@{str(re.sub(r'\([^)]*\)', '', aorther).strip())}**: {msgcont}\n"
+        else:
+            reply_thing = f"-# ┌ {emojis['reply']} *Original message was deleted*\n"
+            message_data = reply_thing + message_data
+
+    if message.interaction_metadata:
+        commandname = "unknown-name"
+        cmd_msg = await bot.http.request(discord.http.Route("GET", f"/channels/{message.channel.id}/messages/{message.id}")) # interaction_metadata lacks command name parameter because fuck me ig
+        if "interaction" in cmd_msg:
+            if "name" in cmd_msg["interaction"]:
+                commandname = cmd_msg["interaction"]["name"]
+
+        command_thing = f"-# ┌ {emojis['command']} **@{message.interaction_metadata.user.name}** used `/{commandname}`\n"
+        message_data = command_thing + message_data
+
     for messageId in to_edit:
         try:
             channel = bot.get_channel(int(to_edit[messageId]))
@@ -817,65 +868,11 @@ async def on_message_edit(before: discord.Message, message: discord.Message):
             if webhook is None:
                 return
 
-            # regenerate the message content
-
-            if True: # cant be bothered to unindent all this
-                sticker_data = ""
-                if message.stickers:
-                    sticker = message.stickers[0]
-                    if sticker.format == StickerFormatType.gif:
-                        suffix = ".gif"
-                    else:
-                        suffix = ".png"
-                    sticker_data = f"[{sticker.name}](https://media.discordapp.net/stickers/{sticker.id}{suffix})"
-
-                message_data = message.content + sticker_data
-
-                if message.reference:
-                    try:
-                        ogmsg = await message.channel.fetch_message(message.reference.message_id)
-                    except Exception:
-                        ogmsg = None
-                    deactiveurl = r"(https?://\S+)"
-                    if ogmsg is not None:
-                        omlmsg = ogmsg.content
-                        if ogmsg.content.startswith(f"-# ┌ <:reply:") or ogmsg.content.startswith(f"-# ┌ <:command:"):
-                            omlmsg = " ".join(ogmsg.content.splitlines()[1:])
-    
-                        elipse = ""
-                        if len(omlmsg) > 128:
-                            elipse = "..."
-    
-                        msgcont = re.sub(deactiveurl, r"<\1>", omlmsg).replace('\n', ' ')[:128] + elipse
-
-                        quserisbanned = (str(ogmsg.author.id) in db[mlchannel]["bans"] and db[mlchannel]["bans"][str(ogmsg.author.id)])
-                        quserisglobalbanned = (str(ogmsg.author.id) in db["MariLink_Configuration"]["bans"] and db["MariLink_Configuration"]["bans"][str(ogmsg.author.id)])
-                        qusermoderated = (quserisbanned or quserisglobalbanned)
-
-                        if qusermoderated:
-                            msgcont = "[Blocked Message]"
-
-                        aorther = str(ogmsg.author).replace('#0000', '').replace(' [Via MariLink]', '')
-                        reply_thing = f"-# ┌ {emojis['reply']} **@{str(re.sub(r'\([^)]*\)', '', aorther).strip())}**: {msgcont}\n"
-                    else:
-                        reply_thing = f"-# ┌ {emojis['reply']} *Original message was deleted*\n"
-                    message_data = reply_thing + message_data
-
                 # bot stuff
                 if not message.author.bot and not message.webhook_id:
                     embeds = []
                 else:
                     embeds = message.embeds
-
-                if message.interaction_metadata:
-                    commandname = "unknown-name"
-                    cmd_msg = await bot.http.request(discord.http.Route("GET", f"/channels/{message.channel.id}/messages/{message.id}")) # interaction_metadata lacks command name parameter because fuck me ig
-                    if "interaction" in cmd_msg:
-                        if "name" in cmd_msg["interaction"]:
-                            commandname = cmd_msg["interaction"]["name"]
-
-                    command_thing = f"-# ┌ {emojis['command']} **@{message.interaction_metadata.user.name}** used `/{commandname}`\n"
-                    message_data = command_thing + message_data
     
                 await webhook.edit_message(messageId, content=(message_data or "-# no message content\n"), embeds=embeds)
         except Exception as e:
@@ -950,6 +947,62 @@ async def on_message(message: discord.Message):
 
     message_data = message.content
 
+    if message.reference:
+        ogmsg = await message.channel.fetch_message(message.reference.message_id)
+
+        quserisbanned = (str(ogmsg.author.id) in db[mlchannel]["bans"] and db[mlchannel]["bans"][str(ogmsg.author.id)])
+        quserisglobalbanned = (str(ogmsg.author.id) in db["MariLink_Configuration"]["bans"] and db["MariLink_Configuration"]["bans"][str(ogmsg.author.id)])
+        qusermoderated = (quserisbanned or quserisglobalbanned)
+
+        deactiveurl = r"(https?://\S+)"
+    
+        omlmsg = ogmsg.content
+        if ogmsg.content.startswith(f"-# ┌ {emojis['reply']}"):
+            omlmsg = " ".join(ogmsg.content.splitlines()[1:])
+    
+        elipse = ""
+        if len(omlmsg) > 128:
+            elipse = "..."
+    
+        msgcont = re.sub(deactiveurl, r"<\1>", omlmsg).replace('\n', ' ')[:128] + elipse
+
+        if qusermoderated:
+            msgcont = "[Blocked Message]"
+
+        aorther = str(ogmsg.author).replace('#0000', '').replace(' [Via MariLink]', '')
+        reply_thing = f"-# ┌ {emojis['reply']} **@{str(re.sub(r'\([^)]*\)', '', aorther).strip())}**: {msgcont}\n"
+        message_data = reply_thing + message_data
+
+    if message.interaction_metadata:
+        commandname = "unknown-name"
+        cmd_msg = await bot.http.request(discord.http.Route("GET", f"/channels/{message.channel.id}/messages/{message.id}")) # interaction_metadata lacks command name parameter because fuck me ig
+        if "interaction" in cmd_msg:
+            if "name" in cmd_msg["interaction"]:
+                commandname = cmd_msg["interaction"]["name"]
+
+        command_thing = f"-# ┌ {emojis['command']} **@{message.interaction_metadata.user.name}** used `/{commandname}`\n"
+        message_data = command_thing + message_data
+
+    sticker_data = ""
+    if message.stickers:
+        sticker = message.stickers[0]
+        if sticker.format == StickerFormatType.gif:
+            suffix = ".gif"
+        else:
+            suffix = ".png"
+        sticker_data = f"[{sticker.name}](https://media.discordapp.net/stickers/{sticker.id}{suffix})"
+
+    message_data = message_data + sticker_data
+
+    file_datas = []
+    if message.attachments:
+        async with aiohttp.ClientSession() as session:
+            for attachment in message.attachments:
+                async with session.get(attachment.url) as resp:
+                    if resp.status == 200:
+                        data = await resp.read()
+                        file_datas.append((data, attachment.filename))
+
     for channelid in db[mlchannel]["discordChannelIds"]:
         try:
             if not message.channel.id == int(channelid):
@@ -987,68 +1040,13 @@ async def on_message(message: discord.Message):
                 author_name = f"{message.author}{inch}[Via MariLink]"
                 avatar_url = message.author.display_avatar.url if message.author.display_avatar else None
 
-                sticker_data = ""
-                if message.stickers:
-                    sticker = message.stickers[0]
-                    if sticker.format == StickerFormatType.gif:
-                        suffix = ".gif"
-                    else:
-                        suffix = ".png"
-                    sticker_data = f"[{sticker.name}](https://media.discordapp.net/stickers/{sticker.id}{suffix})"
-
-                message_data = message_data + sticker_data
-                files = []
-                if message.attachments:
-                    async with aiohttp.ClientSession() as session:
-                        for attachment in message.attachments:
-                            async with session.get(attachment.url) as resp:
-                                if resp.status == 200:
-                                    data = await resp.read()
-                                    fp = io.BytesIO(data)
-                                    fp.seek(0)
-                                    files.append(discord.File(fp, filename=attachment.filename))
-    
-                if message.reference:
-                    ogmsg = await message.channel.fetch_message(message.reference.message_id)
-
-                    quserisbanned = (str(ogmsg.author.id) in db[mlchannel]["bans"] and db[mlchannel]["bans"][str(ogmsg.author.id)])
-                    quserisglobalbanned = (str(ogmsg.author.id) in db["MariLink_Configuration"]["bans"] and db["MariLink_Configuration"]["bans"][str(ogmsg.author.id)])
-                    qusermoderated = (quserisbanned or quserisglobalbanned)
-
-                    deactiveurl = r"(https?://\S+)"
-    
-                    omlmsg = ogmsg.content
-                    if ogmsg.content.startswith(f"-# ┌ {emojis['reply']}"):
-                        omlmsg = " ".join(ogmsg.content.splitlines()[1:])
-    
-                    elipse = ""
-                    if len(omlmsg) > 128:
-                        elipse = "..."
-    
-                    msgcont = re.sub(deactiveurl, r"<\1>", omlmsg).replace('\n', ' ')[:128] + elipse
-
-                    if qusermoderated:
-                        msgcont = "[Blocked Message]"
-
-                    aorther = str(ogmsg.author).replace('#0000', '').replace(' [Via MariLink]', '')
-                    reply_thing = f"-# ┌ {emojis['reply']} **@{str(re.sub(r'\([^)]*\)', '', aorther).strip())}**: {msgcont}\n"
-                    message_data = reply_thing + message_data
-
                 # bot stuff
                 if not message.author.bot and not message.webhook_id:
                     embeds = []
                 else:
                     embeds = message.embeds
 
-                if message.interaction_metadata:
-                    commandname = "unknown-name"
-                    cmd_msg = await bot.http.request(discord.http.Route("GET", f"/channels/{message.channel.id}/messages/{message.id}")) # interaction_metadata lacks command name parameter because fuck me ig
-                    if "interaction" in cmd_msg:
-                        if "name" in cmd_msg["interaction"]:
-                            commandname = cmd_msg["interaction"]["name"]
-
-                    command_thing = f"-# ┌ {emojis['command']} **@{message.interaction_metadata.user.name}** used `/{commandname}`\n"
-                    message_data = command_thing + message_data
+                files = [discord.File(io.BytesIO(data), filename=name) for data, name in file_datas]
     
                 if not files:
                     message_data = message_data or "-# no message content\n"
