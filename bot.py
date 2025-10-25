@@ -1,7 +1,7 @@
 # --- imports --- #
 
-import discord, traceback, random, json, re, aiohttp, io, os, sys, asyncio
-from discord import app_commands
+import discord, traceback, random, json, re, aiohttp, io, os, sys, asyncio, time
+from discord import app_commands, StickerFormatType
 from discord.ext import commands
 from typing import Literal, Optional
 from dotenv import load_dotenv
@@ -27,7 +27,7 @@ evaluser = 798072830595301406 # Bot owner Id.
 load_dotenv()
 TOKEN = os.getenv("TOKEN") # Load Dotenv
 
-VerString = "Dev" # Version String
+VerString = "1.0.0 BETA" # Version String
 
 emojis = {}
 emojis["normal"] = "<:normal:1415470137464717373>"
@@ -260,7 +260,7 @@ async def help(ctx: commands.Context):
         embed.add_field(name="/delete", value="attempts to delete a message across all the channels. will fail if marilink was restarted after it was sent.", inline=False)
         embed.add_field(name="placeholder", value="the place is held.", inline=False)
         embed.add_field(name="placeholder", value="the place is held.", inline=False)
-        embed.add_field(name="placeholder", value="the place is held.", inline=False)
+        embed.add_field(name="/promote", value="gives a user perms in either a channel you own or administrate. also can be used by global admins to give people global perms.", inline=False)
         embed.add_field(name="/browser", value="shows you public marilink channels. also has a search option.", inline=False)
         embed.add_field(name="/about", value="displays info about MariLink CE", inline=False)
         if VerString == "Dev":
@@ -398,17 +398,13 @@ async def listchannels(ctx: commands.Context, query: str = "None", page: int = 1
 @discord.app_commands.describe(message_id="id or link of message to delete")
 async def delete(ctx: commands.Context, message_id: str):
     try:
-        # implement perm checks later, for operators, moderators, and administrators
-        if not ctx.user.id == evaluser:
-            await ctx.followup.send("no")
-            return
+        await ctx.response.defer()
 
         if "discord.com" in message_id:
             messageId = message_id.rsplit("/", 1)[-1]
         else:
             messageId = message_id
 
-        await ctx.response.defer()
         to_delete = {}
         leadId = None
 
@@ -421,6 +417,23 @@ async def delete(ctx: commands.Context, message_id: str):
                 if str(message_id) in mari_linking[messagepile]["proxies"]:
                     leadId = messagepile
                     break
+
+        db = load_db()
+        channel = mari_linking[leadId]["marichannel"]
+
+        userisadmin = (str(ctx.user.id) in db[channel]["permissions"] and db[channel]["permissions"][str(ctx.user.id)] == "administrator")
+        userismod = (str(ctx.user.id) in db[channel]["permissions"] and db[channel]["permissions"][str(ctx.user.id)] == "moderator")
+        userisop = (str(ctx.user.id) in db[channel]["permissions"] and db[channel]["permissions"][str(ctx.user.id)] == "operator")
+
+        userisglobaladmin = (str(ctx.user.id) in db["MariLink_Configuration"]["permissions"] and db["MariLink_Configuration"]["permissions"][str(ctx.user.id)] == "administrator")
+        userisglobalmod = (str(ctx.user.id) in db["MariLink_Configuration"]["permissions"] and db["MariLink_Configuration"]["permissions"][str(ctx.user.id)] == "moderator")
+        userisglobalop = (str(ctx.user.id) in db["MariLink_Configuration"]["permissions"] and db["MariLink_Configuration"]["permissions"][str(ctx.user.id)] == "operator")
+
+        userisowner = ("userId" in db[channel] and db[channel]["userId"] == str(ctx.user.id))
+        userisbotowner = (ctx.user.id == evaluser)
+
+        if not (userisadmin or userismod or userisop or userisowner or userisglobaladmin or userisglobalmod or userisglobalop or userisbotowner):
+            return await ctx.followup.send("perms issue")
 
         if leadId is None:
             await ctx.followup.send("failed to delete, message not in cache")
@@ -471,10 +484,142 @@ async def changeavatar(message: discord.Interaction, avatar: Optional[discord.At
     except Exception as e:
         await ctx.channel.send(f"Error {random.choice(errorMsgs)}\n-# {e}")
 
+@tree.command(name="promote", description="marmite... and now you're fired.")
+async def promote(ctx: commands.Context, level: Literal["none", "operator", "moderator", "administrator"], user: str, channel: str = "MariLink_Configuration"):
+    try:
+        await ctx.response.defer()
+        db = load_db()
+        if not channel in db:
+            return await ctx.followup.send("not a real channel")
+        if not channel in db:
+            return await ctx.followup.send("not a real channel")
+        db[channel].setdefault("permissions", {})
+        target = None
+        userisadmin = (str(ctx.user.id) in db[channel]["permissions"] and db[channel]["permissions"][str(ctx.user.id)] == "administrator")
+        userisglobaladmin = (str(ctx.user.id) in db["MariLink_Configuration"]["permissions"] and db["MariLink_Configuration"]["permissions"][str(ctx.user.id)] == "administrator")
+        userisowner = ("userId" in db[channel] and db[channel]["userId"] == str(ctx.user.id))
+        userisbotowner = (ctx.user.id == evaluser)
+        if not (userisadmin or userisowner or userisglobaladmin or userisbotowner):
+            return await ctx.followup.send("perms issue")
+        if user.isdigit():
+            target = user
+        else:
+            if user[0] == '<' and user[1] == '@':
+                target = user.replace('<', '').replace('>', '').replace('@', '').replace(' ', '')
+            else:
+                if user.lower() in usernameCache:
+                    target = usernameCache[user.lower()]
+                else:
+                    return await ctx.followup.send("Username not known!")
+        db[channel]["permissions"][str(target)] = level
+        if level == "none":
+            res = f"user <@{target}> demoted"
+        else:
+            res = f"user <@{target}> set to {level}"
+        if channel == "MariLink_Configuration":
+            res += " globally!!!"
+        else:
+            res += f" in channel {channel}!!"
+        save_db(db)
+        await ctx.followup.send(res, allowed_mentions=discord.AllowedMentions.none())
+    except Exception as e:
+        await ctx.channel.send(f"Error {random.choice(errorMsgs)}\n-# {e}")
+
+@tree.command(name="ban", description="ban/unban person from marilink channel or globally")
+async def ban(ctx: commands.Context, user: str, channel: str = "MariLink_Configuration", remove: bool = False):
+    try:
+        await ctx.response.defer()
+        db = load_db()
+        if not channel in db:
+            return await ctx.followup.send("not a real channel")
+        if not channel in db:
+            return await ctx.followup.send("not a real channel")
+        db[channel].setdefault("bans", {})
+        target = None
+        userisadmin = (str(ctx.user.id) in db[channel]["permissions"] and db[channel]["permissions"][str(ctx.user.id)] == "administrator")
+        userisglobaladmin = (str(ctx.user.id) in db["MariLink_Configuration"]["permissions"] and db["MariLink_Configuration"]["permissions"][str(ctx.user.id)] == "administrator")
+        userisowner = ("userId" in db[channel] and db[channel]["userId"] == str(ctx.user.id))
+        userisbotowner = (ctx.user.id == evaluser)
+        if not (userisadmin or userisowner or userisglobaladmin or userisbotowner):
+            return await ctx.followup.send("perms issue")
+        if user.isdigit():
+            target = user
+        else:
+            if user[0] == '<' and user[1] == '@':
+                target = user.replace('<', '').replace('>', '').replace('@', '').replace(' ', '')
+            else:
+                if user.lower() in usernameCache:
+                    target = usernameCache[user.lower()]
+                else:
+                    return await ctx.followup.send("Username not known!")
+        db[channel]["bans"][str(target)] = not remove
+        if remove:
+            un = "un"
+        else:
+            un = ""
+        res = f"user <@{target}> has been {un}banned"
+        if channel == "MariLink_Configuration":
+            res += " globally!!!"
+        else:
+            res += f" in channel {channel}!!"
+        save_db(db)
+        await ctx.followup.send(res, allowed_mentions=discord.AllowedMentions.none())
+    except Exception as e:
+        await ctx.channel.send(f"Error {random.choice(errorMsgs)}\n-# {e}")
+
+@tree.command(name="mute", description="mute/unmute person from marilink channel or globally")
+async def mute(ctx: commands.Context, user: str, channel: str = "MariLink_Configuration", timeout: int = 15):
+    try:
+        await ctx.response.defer()
+        db = load_db()
+        if not channel in db:
+            return await ctx.followup.send("not a real channel")
+        if not channel in db:
+            return await ctx.followup.send("not a real channel")
+        db[channel].setdefault("mutes", {})
+        target = None
+
+        userisadmin = (str(ctx.user.id) in db[channel]["permissions"] and db[channel]["permissions"][str(ctx.user.id)] == "administrator")
+        userisglobaladmin = (str(ctx.user.id) in db["MariLink_Configuration"]["permissions"] and db["MariLink_Configuration"]["permissions"][str(ctx.user.id)] == "administrator")
+        userisowner = ("userId" in db[channel] and db[channel]["userId"] == str(ctx.user.id))
+        userisbotowner = (ctx.user.id == evaluser)
+        userismod = (str(ctx.user.id) in db[channel]["permissions"] and db[channel]["permissions"][str(ctx.user.id)] == "moderator")
+        userisglobalmod = (str(ctx.user.id) in db["MariLink_Configuration"]["permissions"] and db["MariLink_Configuration"]["permissions"][str(ctx.user.id)] == "moderator")
+
+        if not (userisadmin or userisowner or userisglobaladmin or userisbotowner or userismod or userisglobalmod):
+            return await ctx.followup.send("perms issue")
+
+        if user.isdigit():
+            target = user
+        else:
+            if user[0] == '<' and user[1] == '@':
+                target = user.replace('<', '').replace('>', '').replace('@', '').replace(' ', '')
+            else:
+                if user.lower() in usernameCache:
+                    target = usernameCache[user.lower()]
+                else:
+                    return await ctx.followup.send("Username not known!")
+        db[channel]["mutes"][str(target)] = int(time.time())+(timeout*60)
+        if not timeout:
+            un = "un"
+        else:
+            un = ""
+        res = f"user <@{target}> has been {un}muted"
+        if timeout:
+            res += f" {timeout} minutes"
+        if channel == "MariLink_Configuration":
+            res += " globally!!!"
+        else:
+            res += f" in channel {channel}!!"
+        save_db(db)
+        await ctx.followup.send(res, allowed_mentions=discord.AllowedMentions.none())
+    except Exception as e:
+        await ctx.channel.send(f"Error {random.choice(errorMsgs)}\n-# {e}")
+
 # --- debug commads --- #
 
-@bot.command(help="might run code i'm not sure")
-async def do(ctx, *, prompt: str):
+@bot.command(help="simple eval command")
+async def output(ctx, *, prompt: str):
     if ctx.author.id == evaluser:
         try:
             result = eval(prompt, {"__builtins__": __builtins__}, {})
@@ -487,8 +632,8 @@ async def do(ctx, *, prompt: str):
         except Exception as e:
             await ctx.send(str(e))
 
-@bot.command(help="runs code i think")
-async def run(ctx, *, prompt: str):
+@bot.command(help="complex eval command, needs handling")
+async def execute(ctx, *, prompt: str):
     if ctx.author.id == evaluser:
         # complex eval, multi-line + async support
         # requires the full `await message.channel.send(2+3)` to get the result
@@ -555,7 +700,11 @@ async def on_ready():
     await bot.tree.sync()
     bot.session = aiohttp.ClientSession()
     print("MariLink logged in!")
-    await bot.change_presence(activity=discord.CustomActivity(name=f"MariLink CE v{VerString}"))
+    if VerString == "Dev":
+        Status = f"MariLink CE Development Version"
+    else:
+        Status = f"MariLink CE v{VerString}"
+    await bot.change_presence(activity=discord.CustomActivity(name=Status))
 
 @bot.event
 async def on_message_delete(message: discord.Message):
@@ -615,6 +764,8 @@ async def on_message_edit(before: discord.Message, message: discord.Message):
     to_edit = {}
     leadId = None
 
+    db = load_db()
+
     global mari_linking
 
     if str(messageId) in mari_linking:
@@ -631,6 +782,23 @@ async def on_message_edit(before: discord.Message, message: discord.Message):
 
     for msgId in mari_linking[leadId]["proxies"]:
         to_edit[msgId] = mari_linking[leadId]["proxies"][msgId][1]
+
+    mlchannel = mari_linking[leadId]["marichannel"]
+
+    db[mlchannel].setdefault("mutes", {})
+    db[mlchannel].setdefault("bans", {})
+    db["MariLink_Configuration"].setdefault("mutes", {})
+    db["MariLink_Configuration"].setdefault("bans", {})
+
+    userismuted = (str(message.author.id) in db[mlchannel]["mutes"] and db[mlchannel]["mutes"][str(message.author.id)] > int(time.time()))
+    userisbanned = (str(message.author.id) in db[mlchannel]["bans"] and db[mlchannel]["bans"][str(message.author.id)])
+    userisglobalmuted = (str(message.author.id) in db["MariLink_Configuration"]["mutes"] and db["MariLink_Configuration"]["mutes"][str(message.author.id)] > int(time.time()))
+    userisglobalbanned = (str(message.author.id) in db["MariLink_Configuration"]["bans"] and db["MariLink_Configuration"]["bans"][str(message.author.id)])
+
+    usermoderated = (userismuted or userisbanned or userisglobalmuted or userisglobalbanned)
+
+    if usermoderated:
+        return
 
     for messageId in to_edit:
         try:
@@ -681,6 +849,14 @@ async def on_message_edit(before: discord.Message, message: discord.Message):
                             elipse = "..."
     
                         msgcont = re.sub(deactiveurl, r"<\1>", omlmsg).replace('\n', ' ')[:128] + elipse
+
+                        quserisbanned = (str(ogmsg.author.id) in db[mlchannel]["bans"] and db[mlchannel]["bans"][str(ogmsg.author.id)])
+                        quserisglobalbanned = (str(ogmsg.author.id) in db["MariLink_Configuration"]["bans"] and db["MariLink_Configuration"]["bans"][str(ogmsg.author.id)])
+                        qusermoderated = (quserisbanned or quserisglobalbanned)
+
+                        if qusermoderated:
+                            msgcont = "[Blocked Message]"
+
                         aorther = str(ogmsg.author).replace('#0000', '').replace(' [Via MariLink]', '')
                         reply_thing = f"-# ┌ {emojis['reply']} **@{str(re.sub(r'\([^)]*\)', '', aorther).strip())}**: {msgcont}\n"
                     else:
@@ -737,8 +913,32 @@ async def on_message(message: discord.Message):
             if message.author.bot:
                 return
 
+    db[mlchannel].setdefault("mutes", {})
+    db[mlchannel].setdefault("bans", {})
+    db["MariLink_Configuration"].setdefault("mutes", {})
+    db["MariLink_Configuration"].setdefault("bans", {})
+
+    userismuted = (str(message.author.id) in db[mlchannel]["mutes"] and db[mlchannel]["mutes"][str(message.author.id)] > int(time.time()))
+    userisbanned = (str(message.author.id) in db[mlchannel]["bans"] and db[mlchannel]["bans"][str(message.author.id)])
+    userisglobalmuted = (str(message.author.id) in db["MariLink_Configuration"]["mutes"] and db["MariLink_Configuration"]["mutes"][str(message.author.id)] > int(time.time()))
+    userisglobalbanned = (str(message.author.id) in db["MariLink_Configuration"]["bans"] and db["MariLink_Configuration"]["bans"][str(message.author.id)])
+
+    usermoderated = (userismuted or userisbanned or userisglobalmuted or userisglobalbanned)
+
+    if usermoderated:
+        msg = "you are "
+        if userisglobalbanned:
+            msg += "globally banned from marilink"
+        elif userisbanned:
+            msg += f"banned in {mlchannel}"
+        elif userisglobalmuted:
+            msg += f"globally muted in marilink and can talk again <t:{db['MariLink_Configuration']['mutes'][str(message.author.id)]}:R>"
+        elif userismuted:
+            msg += f"muted in {mlchannel} and can talk again <t:{db[mlchannel]['mutes'][str(message.author.id)]}:R>"
+        return await message.reply(msg)
+
     global mari_linking # caches messages and their proxied message IDs and webhooks
-    mari_linking[str(message.id)] = {"channelID": str(message.channel.id)}
+    mari_linking[str(message.id)] = {"channelID": str(message.channel.id), "marichannel": mlchannel}
 
     db.setdefault("MariLink_Configuration", {})
     db["MariLink_Configuration"].setdefault("webhooks", {})
@@ -805,6 +1005,11 @@ async def on_message(message: discord.Message):
     
                 if message.reference:
                     ogmsg = await message.channel.fetch_message(message.reference.message_id)
+
+                    quserisbanned = (str(ogmsg.author.id) in db[mlchannel]["bans"] and db[mlchannel]["bans"][str(ogmsg.author.id)])
+                    quserisglobalbanned = (str(ogmsg.author.id) in db["MariLink_Configuration"]["bans"] and db["MariLink_Configuration"]["bans"][str(ogmsg.author.id)])
+                    qusermoderated = (quserisbanned or quserisglobalbanned)
+
                     deactiveurl = r"(https?://\S+)"
     
                     omlmsg = ogmsg.content
@@ -816,6 +1021,10 @@ async def on_message(message: discord.Message):
                         elipse = "..."
     
                     msgcont = re.sub(deactiveurl, r"<\1>", omlmsg).replace('\n', ' ')[:128] + elipse
+
+                    if qusermoderated:
+                        msgcont = "[Blocked Message]"
+
                     aorther = str(ogmsg.author).replace('#0000', '').replace(' [Via MariLink]', '')
                     reply_thing = f"-# ┌ {emojis['reply']} **@{str(re.sub(r'\([^)]*\)', '', aorther).strip())}**: {msgcont}\n"
                     message_data = reply_thing + message_data
