@@ -911,6 +911,10 @@ async def on_message(message: discord.Message):
             if message.author.bot:
                 return
 
+    if "Type" in db[mlchannel] and db[mlchannel]["Type"] == "OneWay":
+        if not db[mlchannel]["discordChannelIds"][0] == str(message.channel.id):
+            return
+
     db[mlchannel].setdefault("mutes", {})
     db[mlchannel].setdefault("bans", {})
     db["MariLink_Configuration"].setdefault("mutes", {})
