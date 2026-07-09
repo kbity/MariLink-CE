@@ -404,6 +404,8 @@ async def listchannels(ctx: commands.Context, query: str = "None", page: int = 1
 @discord.app_commands.describe(message_id="id or link of message to delete")
 async def delete(ctx: commands.Context, message_id: str):
     try:
+        err = 0
+
         await ctx.response.defer()
 
         if "discord.com" in message_id:
@@ -426,6 +428,7 @@ async def delete(ctx: commands.Context, message_id: str):
 
         db = load_db()
         channel = mari_linking[leadId]["marichannel"]
+        db[channel].setdefault("permissions", {})
 
         userisadmin = (str(ctx.user.id) in db[channel]["permissions"] and db[channel]["permissions"][str(ctx.user.id)] == "administrator")
         userismod = (str(ctx.user.id) in db[channel]["permissions"] and db[channel]["permissions"][str(ctx.user.id)] == "moderator")
@@ -456,18 +459,28 @@ async def delete(ctx: commands.Context, message_id: str):
                     await delete_via_webhook(to_delete[messageId][0], to_delete[messageId][2], to_delete[messageId][1])
                 except Exception as f:
                     print(f"deleting error, likely perms issue\n{e}{f}")
+                    err += 1
                     try:
-                        await channel.send("deleting error, likely perms issue (MariLink CE needs manage messages)")
+                        channeln = bot.get_channel(int(to_delete[messageId]))
+                        await channeln.send("deleting error, likely perms issue (MariLink CE needs manage messages)")
                     except Exception:
                         pass
 
         channel = bot.get_channel(int(mari_linking[str(leadId)]["channelID"]))
         msg = await channel.fetch_message(leadId)
-        await msg.delete()
+        h = ""
+        try:
+            await msg.delete()
+        except Exception:
+            err += 1
+            h = ", including the source message"
 
         mari_linking.pop(leadId, None)
 
-        await ctx.followup.send(f"{emojis['ml_check']} Deleted")
+        res = f"{emojis['ml_check']} Deleted"
+        if err:
+            res += f"\nfailed to delete message in {err} channels{h}."
+        await ctx.followup.send(res)
     except Exception as e:
         await ctx.channel.send(f"Error {random.choice(errorMsgs)}\n-# {e}")
 
@@ -1112,9 +1125,12 @@ async def on_message(message: discord.Message):
                     mari_linking[str(message.id)].setdefault("proxies", {})
                     mari_linking[str(message.id)]["proxies"][str(webhook_msg.id)] = [webhook_id, webhook_msg.channel.id, webhook.token]
                 else:
-                    webhook_msg = await channel.send(message_data)
+                    webhook_msg = await channel.send(content=message_data[:2000],
+                        files=files,
+                        allowed_mentions=discord.AllowedMentions.none(),
+                        embeds=embeds)
                     mari_linking[str(message.id)].setdefault("proxies", {})
-                    mari_linking[str(message.id)]["proxies"][str(webhook_msg.id)] = [bot.user.id, webhook_msg.channel.id, None]
+                    mari_linking[str(message.id)]["proxies"][str(webhook_msg.id)] = [None, webhook_msg.channel.id, None]
 
         except Exception as e:
             try:
