@@ -2,7 +2,7 @@
 
 import discord, traceback, random, json, re, aiohttp, io, os, sys, asyncio, time
 from discord import app_commands, StickerFormatType
-from discord.ext import commands
+from discord.ext import commands, tasks
 from typing import Literal, Optional
 from dotenv import load_dotenv
 
@@ -27,7 +27,7 @@ evaluser = 798072830595301406 # Bot owner Id.
 load_dotenv()
 TOKEN = os.getenv("TOKEN") # Load Dotenv
 
-VerString = "1.0.0" # Version String
+VerString = "1.0.1" # Version String
 
 emojis = {}
 emojis["normal"] = "<:normal:1415470137464717373>"
@@ -43,6 +43,8 @@ emojis["ml_error"] = "<:ml_error:1431480920400990349>"
 errorMsgs = ["500 Internal Server Error", "501 Not Implemented", "502 Bad Gateway", "503 Service Unavailable", "504 Gateway Timeout", "505 HTTP Version Not Supported", "506 Variant Also Negotiates", "507 Insufficient Storage", "508 Loop Detected", "509 Bandwidth Limit Exceeded", "510 Not Extended", "511 Network Authentication Required", "520 Web Server Returned an Unknown Error", "521 Web Server Is Down", "522 Connection Timed Out", "523 Origin Is Unreachable", "524 A Timeout Occurred", "525 SSL Handshake Failed", "526 Invalid SSL Certificate", "527 Railgun Error", "529 Site is overloaded", "530 Origin DNS Error", "540 Temporarily Disabled", "555 User Defined Resource Error", "561 Unauthorized", "598 Network read timeout error", "599 Network Connect Timeout Error", "618 Too Many Cubes\n-# ✨ You got the Rare Error"]
 
 whatce = ["Community Edition", "Crystal Ediquite", "Cpython rEwrite", "Crazy Edition", "Colour Edition", "Cell machinE", "AX Zirconium" "Ceiling Effects", "Chilled Estrogen", "CD Easy", "Citem Easylum is way more interesting", "Cool Explosions", "Countless Errors", "CEASCE", "Creating Elephants", "Cyeah ok libEral", "Ceroba Edition", "Classic Edition", "(fan) Cervice Edition", "99 bottles of iCE cold beer", "Creisi Edition", "Cesium Edition", "Community Edition??", "Cinnamon Edition", "Chocolate and Eggs", "CariEink", "CErium", "ChEchen language", "Common Era", "Customer Edge", "Calculator Edition", "Celery Empire"]
+
+PRUNE_TTL_SECONDS = 60 * 60 * 24  # 24h
 
 # --- commands --- #
 
@@ -189,7 +191,7 @@ async def unlink(ctx: commands.Context, name: str, password: str = None):
                     return
 
         if not "discordChannelIds" in db[name]:
-            db[name]["discordChannelIds"] = [str(ctx.channel.id)]
+            db[name]["discordChannelIds"] = []
         else:
             if str(ctx.channel.id) in db[name]["discordChannelIds"]:
                 await ctx.followup.send(f"<#{ctx.channel.id}> is already linked to `{name}`")
@@ -447,9 +449,11 @@ async def delete(ctx: commands.Context, message_id: str):
             to_delete[msgId] = mari_linking[leadId]["proxies"][msgId][1]
 
         for messageId in to_delete:
-            channel = bot.get_channel(int(to_delete[messageId]))
-            msg = await channel.fetch_message(int(messageId))
-            await msg.delete()
+            try:
+                await bot.http.delete_message(int(to_delete[messageId]), int(messageId))
+            except Exception as e:
+                print(f"deleting error, likely perms issue\n{e}")
+                await channel.send("deleting error, likely perms issue (MariLink CE needs manage messages)")
 
         channel = bot.get_channel(int(mari_linking[str(leadId)]["channelID"]))
         msg = await channel.fetch_message(leadId)
@@ -535,6 +539,7 @@ async def ban(ctx: commands.Context, user: str, channel: str = "MariLink_Configu
         if not channel in db:
             return await ctx.followup.send(f"{emojis['ml_error']} not a real channel")
         db[channel].setdefault("bans", {})
+        db[channel].setdefault("permissions", {})
         target = None
         userisadmin = (str(ctx.user.id) in db[channel]["permissions"] and db[channel]["permissions"][str(ctx.user.id)] == "administrator")
         userisglobaladmin = (str(ctx.user.id) in db["MariLink_Configuration"]["permissions"] and db["MariLink_Configuration"]["permissions"][str(ctx.user.id)] == "administrator")
@@ -575,6 +580,7 @@ async def mute(ctx: commands.Context, user: str, channel: str = "MariLink_Config
         if not channel in db:
             return await ctx.followup.send(f"{emojis['ml_error']} not a real channel")
         db[channel].setdefault("mutes", {})
+        db[channel].setdefault("permissions", {})
         target = None
 
         userisadmin = (str(ctx.user.id) in db[channel]["permissions"] and db[channel]["permissions"][str(ctx.user.id)] == "administrator")
@@ -616,22 +622,8 @@ async def mute(ctx: commands.Context, user: str, channel: str = "MariLink_Config
 
 # --- debug commads --- #
 
-@bot.command(help="simple eval command")
-async def output(ctx, *, prompt: str):
-    if ctx.author.id == evaluser:
-        try:
-            result = eval(prompt, {"__builtins__": __builtins__}, {})
-            if asyncio.iscoroutine(result):
-                result = await result
-            if result is None:
-                await ctx.send("Success!")
-            else:
-                await ctx.send(str(result))
-        except Exception as e:
-            await ctx.send(str(e))
-
 @bot.command(help="complex eval command, needs handling")
-async def execute(ctx, *, prompt: str):
+async def eval(ctx, *, prompt: str):
     if ctx.author.id == evaluser:
         # complex eval, multi-line + async support
         # requires the full `await message.channel.send(2+3)` to get the result
@@ -691,6 +683,38 @@ def save_db(data):
     with open('db.json', 'w') as f:
         json.dump(data, f, indent=4)
 
+async def get_or_create_webhook(ctxchannel, db):
+    db["MariLink_Configuration"].setdefault("webhooks", {})
+    webhook_id = db["MariLink_Configuration"]["webhooks"].get(str(ctxchannel.id), None)
+    webhook = None
+
+    if webhook_id:
+        try:
+            webhooks = await ctxchannel.webhooks()
+            webhook = discord.utils.get(webhooks, id=webhook_id)
+            if webhook.user:
+                if not webhook.user.id  == bot.user.id:
+                    raise Exception("not mine!")
+        except Exception:
+            webhook = None
+
+    if webhook is None:
+        # Webhook is missing or invalid; create a new one
+        webhook_obj = await ctxchannel.create_webhook(name="MariLink Webhook", avatar=mlav)
+        webhook_id = webhook_obj.id
+        db["MariLink_Configuration"]["webhooks"][str(ctxchannel.id)] = webhook_id
+        save_db(db)
+        webhook = webhook_obj
+
+    return webhook, db # update database with the function to prevent immediate reverts
+
+async def delete_via_webhook(webhook_id, webhook_token, message_id, thread_id=None):
+    webhook = discord.Webhook.partial(int(webhook_id), webhook_token, client=bot)
+    kwargs = {}
+    if thread_id:
+        kwargs["thread"] = discord.Object(id=thread_id)
+    await webhook.delete_message(int(message_id), **kwargs)
+
 # --- events --- #
 
 @bot.event
@@ -703,6 +727,7 @@ async def on_ready():
     else:
         Status = f"MariLink CE v{VerString}"
     await bot.change_presence(activity=discord.CustomActivity(name=Status))
+    prune_mari_linking.start()
 
 @bot.event
 async def on_message_delete(message: discord.Message):
@@ -710,6 +735,7 @@ async def on_message_delete(message: discord.Message):
 
     if message.author.id == bot.user.id:
         return # dont respond to itself
+    db = load_db()
 
     if message.webhook_id and not message.interaction_metadata: # allow application commands
         return # dont respond to webhooks, often sent by the bot itself
@@ -738,18 +764,20 @@ async def on_message_delete(message: discord.Message):
 
     for messageId in to_delete:
         try:
-            channel = bot.get_channel(int(to_delete[messageId]))
-            msg = await channel.fetch_message(int(messageId))
-            await msg.delete()
+            await bot.http.delete_message(int(to_delete[messageId]), int(messageId))
         except Exception as e:
-            print(f"deleting error, likely perms issue\n{e}")
-            await channel.send("deleting error, likely perms issue (MariLink CE needs manage messages)")
+            try:
+                await delete_via_webhook(to_delete[messageId][0], to_delete[messageId][2], to_delete[messageId][1])
+            except Exception as f:
+                print(f"deleting error, likely perms issue\n{e}{f}")
+                await channel.send("deleting error, likely perms issue (MariLink CE needs manage messages)")
 
     mari_linking.pop(leadId, None)
 
 @bot.event
 async def on_message_edit(before: discord.Message, message: discord.Message):
-    await asyncio.sleep(5) # prevents race conditions
+    mari_linking[leadId]["cancelled"] = True # STOP sending it out
+    await asyncio.sleep(1) # prevents race conditions
 
     if message.author.id == bot.user.id:
         return # dont respond to itself
@@ -880,10 +908,13 @@ async def on_message_edit(before: discord.Message, message: discord.Message):
 
 @bot.event
 async def on_message(message: discord.Message):
+    db = load_db()
+
     if message.author.id == bot.user.id:
         return # dont respond to itself
     if message.webhook_id and not message.interaction_metadata: # allow application commands
-        return # dont respond to webhooks, often sent by the bot itself
+        if not message.webhook_id in db["MariLink_Configuration"].get("webhook_whitelist", []):
+            return # dont respond to webhooks, often sent by the bot itself (unless they are whitelisted)
 
     # add username to cache, used for moderation
     global usernameCache
@@ -891,7 +922,6 @@ async def on_message(message: discord.Message):
         usernameCache[message.author.name] = message.author.id
 
     await bot.process_commands(message) # processes text commands
-    db = load_db()
     mlchannel = None
 
     for entry in db:
@@ -905,7 +935,7 @@ async def on_message(message: discord.Message):
 
     if "allow_bots" in db[mlchannel]:
         if db[mlchannel]["allow_bots"] == False:
-            if message.author.bot:
+            if message.author.bot or message.webhook_id:
                 return
 
     if "Type" in db[mlchannel] and db[mlchannel]["Type"] == "OneWay":
@@ -914,6 +944,7 @@ async def on_message(message: discord.Message):
 
     db[mlchannel].setdefault("mutes", {})
     db[mlchannel].setdefault("bans", {})
+    db.setdefault("MariLink_Configuration", {})
     db["MariLink_Configuration"].setdefault("mutes", {})
     db["MariLink_Configuration"].setdefault("bans", {})
 
@@ -1004,31 +1035,17 @@ async def on_message(message: discord.Message):
                         file_datas.append((data, attachment.filename))
 
     for channelid in db[mlchannel]["discordChannelIds"]:
+        if mari_linking.get(str(message.id), {}).get("cancelled"):
+            break
+        channel = None
         try:
             if not message.channel.id == int(channelid):
                 webhook = None
                 webhook_id = False
                 channel = bot.get_channel(int(channelid))
 
-                if str(channelid) in db["MariLink_Configuration"]["webhooks"]:
-                    webhook_id = db["MariLink_Configuration"]["webhooks"][str(channelid)]
-
-                if webhook_id:
-                    try:
-                        webhooks = await channel.webhooks()
-                        webhook = discord.utils.get(webhooks, id=webhook_id)
-                    except (discord.NotFound, discord.Forbidden):
-                        webhook = None
-
-                if webhook is None:
-                    webhook_obj = await channel.create_webhook(
-                        name="MariLink Webhook",
-                        avatar=mlav
-                    )
-                    webhook_id = webhook_obj.id
-                    db["MariLink_Configuration"]["webhooks"][str(channelid)] = webhook_id
-                    save_db(db)
-                    webhook = webhook_obj
+                webhook, db = await get_or_create_webhook(channel, db)
+                webhook_id = webhook.id
     
                 inch = f" (in #{mlchannel}) "
                 blacklisted_words = ["discord", "nitro", "clyde"]
@@ -1061,8 +1078,36 @@ async def on_message(message: discord.Message):
                     embeds=embeds
                 )
                 mari_linking[str(message.id)].setdefault("proxies", {})
-                mari_linking[str(message.id)]["proxies"][str(webhook_msg.id)] = [webhook_id, webhook_msg.channel.id]
+                mari_linking[str(message.id)]["proxies"][str(webhook_msg.id)] = [webhook_id, webhook_msg.channel.id, webhook.token]
         except Exception as e:
-            print(f"ERROR!\n{e}")
+            try:
+                if channel:
+                    await channel.send(f"ERROR!\n{e}")
+                else:
+                    await message.channel.send(f"ERROR!\n{e}")
+            finally:
+                print(f"ERROR!\n{e}")
+
+# --- task loop ---
+
+@tasks.loop(minutes=30)
+async def prune_mari_linking():
+    global mari_linking
+    prune_counter = 0
+    now = discord.utils.utcnow()
+    stale = []
+    for leadId, entry in mari_linking.items():
+        try:
+            created = discord.utils.snowflake_time(int(leadId))
+        except (ValueError, TypeError):
+            continue
+        if (now - created).total_seconds() > PRUNE_TTL_SECONDS:
+            stale.append(leadId)
+    for leadId in stale:
+        mari_linking.pop(leadId, None)
+        prune_counter += 1
+    if prune_counter:
+        print(f"[INFO] removed {prune_counter} stale messages from cache")
+
 # --- login --- #
 bot.run(TOKEN)
