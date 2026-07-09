@@ -776,6 +776,8 @@ async def on_message_delete(message: discord.Message):
 
 @bot.event
 async def on_message_edit(before: discord.Message, message: discord.Message):
+    global mari_linking
+
     mari_linking[leadId]["cancelled"] = True # STOP sending it out
     await asyncio.sleep(1) # prevents race conditions
 
@@ -791,8 +793,6 @@ async def on_message_edit(before: discord.Message, message: discord.Message):
     leadId = None
 
     db = load_db()
-
-    global mari_linking
 
     if str(messageId) in mari_linking:
         leadId = str(messageId)
