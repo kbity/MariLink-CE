@@ -733,6 +733,7 @@ async def on_ready():
 async def on_message_delete(message: discord.Message):
     global mari_linking
     leadId = None
+    messageId = message.id
 
     if str(messageId) in mari_linking:
         leadId = str(messageId)
@@ -740,20 +741,21 @@ async def on_message_delete(message: discord.Message):
         return
     if not leadId in mari_linking:
         return
-    if not "proxies" in mari_linking[leadId]:
-        return
     if message.author.id == bot.user.id:
         return # dont respond to itself
 
     mari_linking[leadId]["cancelled"] = True # STOP sending it out
+
     await asyncio.sleep(1) # prevents race conditions
+
+    if not "proxies" in mari_linking[leadId]:
+        return
 
     db = load_db()
 
     if message.webhook_id and not message.interaction_metadata: # allow application commands
         return # dont respond to webhooks, often sent by the bot itself
 
-    messageId = message.id
     to_delete = {}
 
     for msgId in mari_linking[leadId]["proxies"]:
@@ -769,6 +771,8 @@ async def on_message_delete(message: discord.Message):
                 print(f"deleting error, likely perms issue\n{e}{f}")
                 await channel.send("deleting error, likely perms issue (MariLink CE needs manage messages)")
 
+
+    await asyncio.sleep(10) # ensure the entry exists long enough for whatever
     mari_linking.pop(leadId, None)
 
 @bot.event
@@ -1031,7 +1035,7 @@ async def on_message(message: discord.Message):
                         file_datas.append((data, attachment.filename))
 
     for channelid in db[mlchannel]["discordChannelIds"]:
-        if mari_linking.get(str(message.id), {}).get("cancelled"):
+        if mari_linking[str(message.id)].get("cancelled"):
             break
         channel = None
         try:
