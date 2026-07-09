@@ -452,8 +452,14 @@ async def delete(ctx: commands.Context, message_id: str):
             try:
                 await bot.http.delete_message(int(to_delete[messageId]), int(messageId))
             except Exception as e:
-                print(f"deleting error, likely perms issue\n{e}")
-                await channel.send("deleting error, likely perms issue (MariLink CE needs manage messages)")
+                try:
+                    await delete_via_webhook(to_delete[messageId][0], to_delete[messageId][2], to_delete[messageId][1])
+                except Exception as f:
+                    print(f"deleting error, likely perms issue\n{e}{f}")
+                    try:
+                        await channel.send("deleting error, likely perms issue (MariLink CE needs manage messages)")
+                    except Exception:
+                        pass
 
         channel = bot.get_channel(int(mari_linking[str(leadId)]["channelID"]))
         msg = await channel.fetch_message(leadId)
@@ -748,6 +754,9 @@ async def on_message_delete(message: discord.Message):
 
     await asyncio.sleep(1) # prevents race conditions
 
+    if not leadId in mari_linking:
+        return # the message was likely deleted by /delete
+
     if not "proxies" in mari_linking[leadId]:
         return
 
@@ -769,10 +778,13 @@ async def on_message_delete(message: discord.Message):
                 await delete_via_webhook(to_delete[messageId][0], to_delete[messageId][2], to_delete[messageId][1])
             except Exception as f:
                 print(f"deleting error, likely perms issue\n{e}{f}")
-                await channel.send("deleting error, likely perms issue (MariLink CE needs manage messages)")
+                try:
+                    await channel.send("deleting error, likely perms issue (MariLink CE needs manage messages)")
+                except Exception:
+                    pass
 
 
-    await asyncio.sleep(10) # ensure the entry exists long enough for whatever
+    await asyncio.sleep(5) # ensure the entry exists long enough for whatever
     mari_linking.pop(leadId, None)
 
 @bot.event
