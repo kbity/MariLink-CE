@@ -1034,6 +1034,7 @@ async def on_message(message: discord.Message):
                         data = await resp.read()
                         file_datas.append((data, attachment.filename))
 
+    bad_channels = []
     for channelid in db[mlchannel]["discordChannelIds"]:
         if mari_linking[str(message.id)].get("cancelled"):
             break
@@ -1043,6 +1044,12 @@ async def on_message(message: discord.Message):
                 webhook = None
                 webhook_id = False
                 channel = bot.get_channel(int(channelid))
+                if channel is None:
+                    try:
+                        channel = await bot.fetch_channel(int(channelid))
+                    except (discord.Forbidden, discord.NotFound):
+                        bad_channels.append(channelid)
+                        continue
 
                 webhook, db = await get_or_create_webhook(channel, db)
                 webhook_id = webhook.id
@@ -1087,6 +1094,15 @@ async def on_message(message: discord.Message):
                     await message.channel.send(f"ERROR!\n{e}")
             finally:
                 print(f"ERROR!\n{e}")
+
+    for channel in bad_channels:
+        try:
+            db[mlchannel]["discordChannelIds"].remove(channel)
+            print(f"[INFO] removed inaccessible channel with ID {channel}")
+        except ValueError:
+            pass
+    if bad_channels:
+        save_db(db)
 
 # --- task loop ---
 
