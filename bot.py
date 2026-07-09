@@ -731,33 +731,30 @@ async def on_ready():
 
 @bot.event
 async def on_message_delete(message: discord.Message):
-    await asyncio.sleep(5) # prevents race conditions
+    global mari_linking
+    leadId = None
 
+    if str(messageId) in mari_linking:
+        leadId = str(messageId)
+    if leadId is None:
+        return
+    if not leadId in mari_linking:
+        return
+    if not "proxies" in mari_linking[leadId]:
+        return
     if message.author.id == bot.user.id:
         return # dont respond to itself
+
+    mari_linking[leadId]["cancelled"] = True # STOP sending it out
+    await asyncio.sleep(1) # prevents race conditions
+
     db = load_db()
 
     if message.webhook_id and not message.interaction_metadata: # allow application commands
         return # dont respond to webhooks, often sent by the bot itself
 
     messageId = message.id
-
     to_delete = {}
-    leadId = None
-
-    global mari_linking
-
-    if str(messageId) in mari_linking:
-        leadId = str(messageId)
-
-    if leadId is None:
-        return
-
-    if not leadId in mari_linking:
-        return
-
-    if not "proxies" in mari_linking[leadId]:
-        return
 
     for msgId in mari_linking[leadId]["proxies"]:
         to_delete[msgId] = mari_linking[leadId]["proxies"][msgId][1]
@@ -778,8 +775,7 @@ async def on_message_delete(message: discord.Message):
 async def on_message_edit(before: discord.Message, message: discord.Message):
     global mari_linking
 
-    mari_linking[leadId]["cancelled"] = True # STOP sending it out
-    await asyncio.sleep(1) # prevents race conditions
+    await asyncio.sleep(5) # prevents race conditions
 
     if message.author.id == bot.user.id:
         return # dont respond to itself
