@@ -954,6 +954,10 @@ async def on_message(message: discord.Message):
         if not db[mlchannel]["discordChannelIds"][0] == str(message.channel.id):
             return
 
+    use_webhooks = True
+    if "Type" in db[mlchannel] and db[mlchannel]["Type"] == "Strange":
+        use_webhooks = False
+
     db[mlchannel].setdefault("mutes", {})
     db[mlchannel].setdefault("bans", {})
     db.setdefault("MariLink_Configuration", {})
@@ -1053,8 +1057,6 @@ async def on_message(message: discord.Message):
         channel = None
         try:
             if not message.channel.id == int(channelid):
-                webhook = None
-                webhook_id = False
                 channel = bot.get_channel(int(channelid))
                 if channel is None:
                     try:
@@ -1063,8 +1065,11 @@ async def on_message(message: discord.Message):
                         bad_channels.append(channelid)
                         continue
 
-                webhook, db = await get_or_create_webhook(channel, db)
-                webhook_id = webhook.id
+                if use_webhooks:
+                    webhook = None
+                    webhook_id = False
+                    webhook, db = await get_or_create_webhook(channel, db)
+                    webhook_id = webhook.id
     
                 inch = f" (in #{mlchannel}) "
                 blacklisted_words = ["discord", "nitro", "clyde"]
@@ -1073,7 +1078,11 @@ async def on_message(message: discord.Message):
                         inch = ""
                         break
 
-                author_name = f"{message.author}{inch}[Via MariLink]"
+                msgauth = message.author.name.replace("#0000", "")
+                if use_webhooks:
+                    author_name = f"{msgauth}{inch}[Via MariLink]"
+                else:
+                    author_name = f"-# **@{msgauth}**{inch}\n"
                 avatar_url = message.author.display_avatar.url if message.author.display_avatar else None
 
                 # bot stuff
@@ -1086,18 +1095,27 @@ async def on_message(message: discord.Message):
     
                 if not files:
                     message_data = message_data or "-# no message content\n"
-    
-                webhook_msg = await webhook.send(
-                    content=message_data[:2000],
-                    username=author_name[:80],
-                    avatar_url=avatar_url,
-                    files=files,
-                    wait=True,
-                    allowed_mentions=discord.AllowedMentions.none(),
-                    embeds=embeds
-                )
-                mari_linking[str(message.id)].setdefault("proxies", {})
-                mari_linking[str(message.id)]["proxies"][str(webhook_msg.id)] = [webhook_id, webhook_msg.channel.id, webhook.token]
+
+                if not use_webhooks:
+                    message_data = author_name+message_data
+
+                if use_webhooks:
+                    webhook_msg = await webhook.send(
+                        content=message_data[:2000],
+                        username=author_name[:80],
+                        avatar_url=avatar_url,
+                        files=files,
+                        wait=True,
+                        allowed_mentions=discord.AllowedMentions.none(),
+                        embeds=embeds
+                    )
+                    mari_linking[str(message.id)].setdefault("proxies", {})
+                    mari_linking[str(message.id)]["proxies"][str(webhook_msg.id)] = [webhook_id, webhook_msg.channel.id, webhook.token]
+                else:
+                    webhook_msg = await channel.send(message_data)
+                    mari_linking[str(message.id)].setdefault("proxies", {})
+                    mari_linking[str(message.id)]["proxies"][str(webhook_msg.id)] = [bot.user.id, webhook_msg.channel.id, None]
+
         except Exception as e:
             try:
                 if channel:
